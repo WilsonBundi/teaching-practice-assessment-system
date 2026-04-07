@@ -102,6 +102,7 @@ $this->registerCss('
                     ['label' => 'Dashboard', 'url' => ['/tp-office/index']],
                     ['label' => 'Reports', 'url' => ['/tp-office/reports']],
                     ['label' => 'Master Data', 'items' => [
+                        ['label' => 'Overview', 'url' => ['/tp-office/master-data']],
                         ['label' => 'Schools', 'url' => ['/tp-office/schools']],
                         ['label' => 'Zones', 'url' => ['/tp-office/zones']],
                         ['label' => 'Grades', 'url' => ['/tp-office/grades']],

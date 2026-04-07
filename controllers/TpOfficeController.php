@@ -50,7 +50,8 @@ class TpOfficeController extends Controller
         }
 
         // Get assessment statistics
-        $totalAssessments = Assessment::find()->count();
+        $totalAssessments = Assessment::find()->where(['is not', 'validated_by', null])->count(); // Only validated assessments
+        $completedAssessments = Assessment::find()->where(['not', ['overall_level' => null]])->count();
         $recentAssessments = Assessment::find()
             ->orderBy(['assessment_date' => SORT_DESC])
             ->limit(10)
@@ -62,11 +63,125 @@ class TpOfficeController extends Controller
 
         return $this->render('index', [
             'totalAssessments' => $totalAssessments,
+            'completedAssessments' => $completedAssessments,
             'recentAssessments' => $recentAssessments,
             'schoolsCount' => $schoolsCount,
             'zonesCount' => $zonesCount,
             'gradesCount' => $gradesCount,
         ]);
+    }
+
+    /**
+     * Get dashboard data for real-time updates (AJAX)
+     */
+    public function actionGetDashboardData()
+    {
+        if (!Yii::$app->user->identity || Yii::$app->user->identity->role_id != 3) {
+            throw new \yii\web\ForbiddenHttpException('Access denied.');
+        }
+
+        Yii::$app->response->format = Response::FORMAT_JSON;
+
+        $lastUpdate = Yii::$app->request->get('last_update', 0);
+        $currentTime = time();
+
+        // Get current assessment count
+        $totalAssessments = Assessment::find()->where(['is not', 'validated_by', null])->count(); // Only validated assessments
+        $completedAssessments = Assessment::find()->where(['not', ['overall_level' => null]])->count();
+
+        // Check if there are new assessments since last update
+        $newAssessmentsCount = Assessment::find()
+            ->where(['is not', 'validated_by', null]) // Only check validated assessments
+            ->andWhere(['>', 'assessment_date', date('Y-m-d H:i:s', $lastUpdate/1000)])
+            ->count();
+
+        $updated = $newAssessmentsCount > 0;
+
+        // Get recent assessments HTML if updated
+        $recentAssessmentsHtml = null;
+        if ($updated) {
+            $recentAssessments = Assessment::find()
+                ->where(['is not', 'validated_by', null]) // Only validated assessments
+                ->orderBy(['assessment_date' => SORT_DESC])
+                ->limit(10)
+                ->all();
+
+            $recentAssessmentsHtml = $this->renderPartial('_recent_assessments_table', [
+                'recentAssessments' => $recentAssessments
+            ]);
+        }
+
+        return [
+            'updated' => $updated,
+            'totalAssessments' => $totalAssessments,
+            'completedAssessments' => $completedAssessments,
+            'recentAssessmentsHtml' => $recentAssessmentsHtml,
+            'timestamp' => $currentTime * 1000
+        ];
+    }
+
+    /**
+     * Get Reports Data for AJAX updates
+     */
+    public function actionGetReportsData()
+    {
+        if (!Yii::$app->user->identity || Yii::$app->user->identity->role_id != 3) {
+            throw new \yii\web\ForbiddenHttpException('Access denied.');
+        }
+
+        Yii::$app->response->format = Response::FORMAT_JSON;
+
+        $lastUpdate = Yii::$app->request->get('last_update', 0);
+        $status = Yii::$app->request->get('status', 'all');
+        $currentTime = time();
+
+        // Build query based on status - only validated assessments
+        $query = Assessment::find()
+            ->where(['is not', 'validated_by', null]);
+
+        // Filter by status
+        if ($status === 'completed') {
+            $query->andWhere(['not', ['overall_level' => null]]);
+        } elseif ($status === 'pending') {
+            $query->andWhere(['is', 'overall_level', null]);
+        }
+
+        // Get current assessment count for this filter
+        $totalAssessments = $query->count();
+
+        // Check if there are new assessments since last update for this filter
+        $newAssessmentsCount = $query
+            ->andWhere(['>', 'assessment_date', date('Y-m-d H:i:s', $lastUpdate/1000)])
+            ->count();
+
+        $updated = $newAssessmentsCount > 0;
+
+        // Get reports table HTML if updated
+        $reportsTableHtml = null;
+        if ($updated) {
+            $dataProvider = new \yii\data\ActiveDataProvider([
+                'query' => Assessment::find()
+                    ->where(['is not', 'validated_by', null])
+                    ->with(['school', 'grades', 'examinerUser'])
+                    ->andWhere($status === 'completed' ? ['not', ['overall_level' => null]] :
+                              ($status === 'pending' ? ['is', 'overall_level', null] : [])),
+                'pagination' => ['pageSize' => 20],
+                'sort' => [
+                    'defaultOrder' => ['assessment_date' => SORT_DESC],
+                ],
+            ]);
+
+            $reportsTableHtml = $this->renderPartial('_reports_table', [
+                'dataProvider' => $dataProvider
+            ]);
+        }
+
+        return [
+            'updated' => $updated,
+            'totalAssessments' => $totalAssessments,
+            'reportsTableHtml' => $reportsTableHtml,
+            'timestamp' => $currentTime * 1000
+        ];
     }
 
     /**
@@ -188,16 +303,25 @@ class TpOfficeController extends Controller
     /**
      * View Assessment Reports
      */
-    public function actionReports()
+    public function actionReports($status = 'all')
     {
         if (!Yii::$app->user->identity || Yii::$app->user->identity->role_id != 3) {
             throw new \yii\web\ForbiddenHttpException('Access denied.');
         }
 
+        $query = Assessment::find()
+            ->where(['is not', 'validated_by', null]) // Only show validated assessments
+            ->with(['school', 'grades', 'examinerUser']);
+
+        // Additional filter by status
+        if ($status === 'completed') {
+            $query->andWhere(['not', ['overall_level' => null]]);
+        } elseif ($status === 'pending') {
+            $query->andWhere(['is', 'overall_level', null]);
+        }
+
         $dataProvider = new \yii\data\ActiveDataProvider([
-            'query' => Assessment::find()
-                ->where(['or', ['archived' => 0], ['archived' => null]])
-                ->with(['school', 'grades', 'examinerUser']),
+            'query' => $query,
             'pagination' => ['pageSize' => 20],
             'sort' => [
                 'defaultOrder' => ['assessment_date' => SORT_DESC],
@@ -206,6 +330,7 @@ class TpOfficeController extends Controller
 
         return $this->render('reports', [
             'dataProvider' => $dataProvider,
+            'currentStatus' => $status,
         ]);
     }
 
@@ -305,21 +430,25 @@ class TpOfficeController extends Controller
     }
 
     /**
-     * Manage Sub-Strands
+     * Manage Master Data
      */
-    public function actionSubstrands()
+    public function actionMasterData()
     {
         if (!Yii::$app->user->identity || Yii::$app->user->identity->role_id != 3) {
             throw new \yii\web\ForbiddenHttpException('Access denied.');
         }
 
-        $dataProvider = new \yii\data\ActiveDataProvider([
-            'query' => \app\models\Substrand::find(),
-            'pagination' => ['pageSize' => 20],
-        ]);
+        $stats = [
+            'schools' => \app\models\School::find()->count(),
+            'zones' => \app\models\Zone::find()->count(),
+            'grades' => \app\models\Grade::find()->count(),
+            'learningAreas' => \app\models\LearningArea::find()->count(),
+            'strands' => \app\models\Strand::find()->count(),
+            'substrands' => \app\models\Substrand::find()->count(),
+        ];
 
-        return $this->render('substrands', [
-            'dataProvider' => $dataProvider,
+        return $this->render('master-data', [
+            'stats' => $stats,
         ]);
     }
 }

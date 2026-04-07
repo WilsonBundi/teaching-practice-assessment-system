@@ -5,6 +5,7 @@ use yii\widgets\DetailView;
 
 /* @var $this yii\web\View */
 /* @var $totalAssessments int */
+/* @var $completedAssessments int */
 /* @var $recentAssessments array */
 /* @var $schoolsCount int */
 /* @var $zonesCount int */
@@ -12,14 +13,83 @@ use yii\widgets\DetailView;
 
 $this->title = 'TP Office Dashboard';
 $this->params['breadcrumbs'][] = $this->title;
+
+// Register real-time update script
+$this->registerJs("
+    var lastUpdate = Date.now();
+    var updateInterval = 30000; // 30 seconds
+
+    function updateDashboard() {
+        $.ajax({
+            url: '" . \yii\helpers\Url::to(['tp-office/get-dashboard-data']) . "',
+            type: 'GET',
+            data: { last_update: lastUpdate },
+            success: function(data) {
+                if (data.updated) {
+                    // Update assessment count silently
+                    var currentCount = parseInt($('.bg-primary h2').text());
+                    var newCount = data.totalAssessments;
+                    if (currentCount !== newCount) {
+                        $('.bg-primary h2').text(newCount);
+                    }
+
+                    // Update completed assessments count silently
+                    var currentCompletedCount = parseInt($('.bg-secondary h2').text());
+                    var newCompletedCount = data.completedAssessments;
+                    if (currentCompletedCount !== newCompletedCount) {
+                        $('.bg-secondary h2').text(newCompletedCount);
+                    }
+
+                    // Update recent assessments table silently
+                    if (data.recentAssessmentsHtml) {
+                        $('.table-responsive').html(data.recentAssessmentsHtml);
+                    }
+
+                    lastUpdate = Date.now();
+                }
+            },
+            error: function() {
+                console.log('Failed to update dashboard');
+            }
+        });
+    }
+
+    // Start polling
+    setInterval(updateDashboard, updateInterval);
+
+    // Initial update after 5 seconds
+    setTimeout(updateDashboard, 5000);
+", \yii\web\View::POS_READY);
 ?>
+
+<style>
+    .card.updated {
+        /* Removed visual animation */
+    }
+
+    @keyframes pulse {
+        /* Removed pulse animation */
+    }
+
+    .real-time-indicator {
+        /* Removed real-time indicator styles */
+    }
+
+    .real-time-indicator.show {
+        /* Removed show animation */
+    }
+
+    @keyframes slideIn {
+        /* Removed slide animation */
+    }
+</style>
 
 <div class="tp-office-index">
     <h1><?= Html::encode($this->title) ?></h1>
 
     <div class="row">
         <!-- Statistics Cards -->
-        <div class="col-md-3">
+        <div class="col-md-4 mb-3">
             <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Assessments</h5>
@@ -27,7 +97,15 @@ $this->params['breadcrumbs'][] = $this->title;
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4 mb-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Completed Assessments</h5>
+                    <h2><?= $completedAssessments ?></h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h5 class="card-title">Schools</h5>
@@ -35,7 +113,9 @@ $this->params['breadcrumbs'][] = $this->title;
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
             <div class="card bg-warning text-white">
                 <div class="card-body">
                     <h5 class="card-title">Zones</h5>
@@ -43,7 +123,7 @@ $this->params['breadcrumbs'][] = $this->title;
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-6 mb-3">
             <div class="card bg-info text-white">
                 <div class="card-body">
                     <h5 class="card-title">Grades</h5>
@@ -79,14 +159,7 @@ $this->params['breadcrumbs'][] = $this->title;
                     <p class="card-text">
                         Manage schools, zones, grades, learning areas, strands, and sub-strands.
                     </p>
-                    <div class="btn-group-vertical">
-                        <?= Html::a('Schools', ['schools'], ['class' => 'btn btn-outline-secondary']) ?>
-                        <?= Html::a('Zones', ['zones'], ['class' => 'btn btn-outline-secondary']) ?>
-                        <?= Html::a('Grades', ['grades'], ['class' => 'btn btn-outline-secondary']) ?>
-                        <?= Html::a('Learning Areas', ['learning-areas'], ['class' => 'btn btn-outline-secondary']) ?>
-                        <?= Html::a('Strands', ['strands'], ['class' => 'btn btn-outline-secondary']) ?>
-                        <?= Html::a('Sub-Strands', ['substrands'], ['class' => 'btn btn-outline-secondary']) ?>
-                    </div>
+                    <?= Html::a('<i class="fas fa-cogs"></i> Master Data', ['/tp-office/master-data'], ['class' => 'btn btn-primary']) ?>
                 </div>
             </div>
         </div>
@@ -100,32 +173,9 @@ $this->params['breadcrumbs'][] = $this->title;
                     <h5>Recent Assessments</h5>
                 </div>
                 <div class="card-body">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Student</th>
-                                <th>School</th>
-                                <th>Date</th>
-                                <th>Examiner</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($recentAssessments as $assessment): ?>
-                            <tr>
-                                <td><?= Html::encode($assessment->student_reg_no) ?></td>
-                                <td><?= Html::encode($assessment->school->school_name ?? 'N/A') ?></td>
-                                <td><?= Html::encode($assessment->assessment_date) ?></td>
-                                <td><?= Html::encode($assessment->examinerUser->name ?? 'N/A') ?></td>
-                                <td>
-                                    <?= Html::a('View', ['view', 'id' => $assessment->assessment_id], ['class' => 'btn btn-sm btn-info']) ?>
-                                    <?= Html::a('Download', ['download-report', 'id' => $assessment->assessment_id], ['class' => 'btn btn-sm btn-success']) ?>
-                                    <?= Html::a('Archive', ['archive', 'id' => $assessment->assessment_id], ['class' => 'btn btn-sm btn-danger', 'data-confirm' => 'Are you sure you want to archive this assessment?']) ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                    <div class="table-responsive">
+                        <?= $this->render('_recent_assessments_table', ['recentAssessments' => $recentAssessments]) ?>
+                    </div>
                 </div>
             </div>
         </div>

@@ -5,11 +5,16 @@ use yii\grid\GridView;
 
 /* @var $this yii\web\View */
 /* @var $dataProvider yii\data\ActiveDataProvider */
+/* @var $currentStatus string */
 
 $this->title = 'Assessment Reports';
 $this->params['breadcrumbs'][] = ['label' => 'TP Office Dashboard', 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
+
+<style>
+/* Real-time update styles removed for clean user experience */
+</style>
 
 <div class="assessment-reports">
     <h1><?= Html::encode($this->title) ?></h1>
@@ -18,46 +23,115 @@ $this->params['breadcrumbs'][] = $this->title;
         <?= Html::a('Back to Dashboard', ['index'], ['class' => 'btn btn-primary']) ?>
     </p>
 
-    <?= GridView::widget([
-        'dataProvider' => $dataProvider,
-        'columns' => [
-            ['class' => 'yii\grid\SerialColumn'],
+    <!-- Status Filter Tabs -->
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <?= Html::a('All Assessments', ['reports', 'status' => 'all'], [
+                'class' => 'nav-link ' . ($currentStatus === 'all' ? 'active' : '')
+            ]) ?>
+        </li>
+        <li class="nav-item">
+            <?= Html::a('Completed', ['reports', 'status' => 'completed'], [
+                'class' => 'nav-link ' . ($currentStatus === 'completed' ? 'active' : '')
+            ]) ?>
+        </li>
+        <li class="nav-item">
+            <?= Html::a('Pending', ['reports', 'status' => 'pending'], [
+                'class' => 'nav-link ' . ($currentStatus === 'pending' ? 'active' : '')
+            ]) ?>
+        </li>
+    </ul>
 
-            'assessment_id',
-            'student_reg_no',
-            [
-                'attribute' => 'school_id',
-                'value' => function ($model) {
-                    return $model->school->school_name ?? 'N/A';
-                },
-            ],
-            'assessment_date',
-            [
-                'attribute' => 'examiner_user_id',
-                'value' => function ($model) {
-                    return $model->examinerUser->name ?? 'N/A';
-                },
-            ],
-            'overall_level',
+    <div id="reports-container">
+        <?= GridView::widget([
+            'dataProvider' => $dataProvider,
+            'tableOptions' => ['class' => 'table table-striped table-bordered'],
+            'columns' => [
+                ['class' => 'yii\grid\SerialColumn'],
 
-            [
-                'class' => 'yii\grid\ActionColumn',
-                'template' => '{view} {download} {archive}',
-                'buttons' => [
-                    'view' => function ($url, $model, $key) {
-                        return Html::a('View', ['view', 'id' => $model->assessment_id], ['class' => 'btn btn-sm btn-info']);
-                    },
-                    'download' => function ($url, $model, $key) {
-                        return Html::a('Download', ['download-report', 'id' => $model->assessment_id], ['class' => 'btn btn-sm btn-success']);
-                    },
-                    'archive' => function ($url, $model, $key) {
-                        return Html::a('Archive', $url, [
-                            'class' => 'btn btn-sm btn-danger',
-                            'data-confirm' => 'Are you sure you want to archive this assessment?',
-                        ]);
+                'assessment_id',
+                'student_reg_no',
+                [
+                    'attribute' => 'school_id',
+                    'value' => function ($model) {
+                        return $model->school->school_name ?? 'N/A';
                     },
                 ],
+                'assessment_date',
+                [
+                    'attribute' => 'examiner_user_id',
+                    'value' => function ($model) {
+                        return $model->examinerUser->name ?? 'N/A';
+                    },
+                ],
+                'overall_level',
+
+                [
+                    'class' => 'yii\grid\ActionColumn',
+                    'template' => '<div class="btn-group btn-group-sm" role="group">{view}{download}{archive}</div>',
+                    'buttons' => [
+                        'view' => function ($url, $model, $key) {
+                            return Html::a('<i class="fas fa-eye"></i> View', ['view', 'id' => $model->assessment_id], [
+                                'class' => 'btn btn-info',
+                                'title' => 'View Assessment'
+                            ]);
+                        },
+                        'download' => function ($url, $model, $key) {
+                            return Html::a('<i class="fas fa-download"></i> Download', ['download-report', 'id' => $model->assessment_id], [
+                                'class' => 'btn btn-success',
+                                'title' => 'Download Report'
+                            ]);
+                        },
+                        'archive' => function ($url, $model, $key) {
+                            return Html::a('<i class="fas fa-archive"></i> Archive', $url, [
+                                'class' => 'btn btn-danger',
+                                'title' => 'Archive Assessment',
+                                'data-confirm' => 'Are you sure you want to archive this assessment?',
+                            ]);
+                        },
+                    ],
+                ],
             ],
-        ],
-    ]); ?>
+        ]); ?>
+    </div>
 </div>
+
+<?php
+$this->registerJs("
+var lastUpdate = Date.now();
+var updateInterval = 30000; // 30 seconds
+var isUpdating = false;
+
+function updateReportsData() {
+    if (isUpdating) return;
+
+    isUpdating = true;
+
+    $.ajax({
+        url: '" . \yii\helpers\Url::to(['tp-office/get-reports-data']) . "',
+        type: 'GET',
+        data: { 
+            last_update: lastUpdate,
+            status: '" . $currentStatus . "'
+        },
+        success: function(response) {
+            lastUpdate = response.timestamp;
+
+            if (response.updated) {
+                // Update the reports table silently
+                $('#reports-container').html(response.reportsTableHtml);
+            }
+        },
+        error: function() {
+            console.log('Failed to update reports');
+        },
+        complete: function() {
+            isUpdating = false;
+        }
+    });
+}
+
+// Start polling
+setInterval(updateReportsData, updateInterval);
+", \yii\web\View::POS_READY);
+?>

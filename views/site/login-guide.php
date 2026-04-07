@@ -353,7 +353,7 @@ $this->params['breadcrumbs'][] = $this->title;
                             <strong>2. Validation Process:</strong> Zone Coordinator reviews & validates → Supervisor receives validation notification
                         </div>
                         <div class="alert alert-info" role="alert">
-                            <strong>3. System Oversight:</strong> Department Chair monitors all assessments system-wide in real-time
+                            <strong>3. System Oversight:</strong> Department Chair monitors all assessments system-wide
                         </div>
                         <div class="alert alert-info" role="alert">
                             <strong>4. Administration:</strong> TP Office manages users, schools, competencies, and system configuration
